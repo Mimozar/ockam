@@ -1,3 +1,6 @@
+use crate::ProfileIdentifier;
+use ockam_core::{async_trait, AccessControl, LocalMessage, Result};
+
 mod secure_channel_worker;
 pub(crate) use secure_channel_worker::*;
 mod listener;
@@ -9,13 +12,39 @@ pub use trust_policy::*;
 mod local_info;
 pub use local_info::*;
 
+pub struct EntitySecureChannelAccessControl {
+    their_profile_id: ProfileIdentifier,
+}
+
+impl EntitySecureChannelAccessControl {
+    pub fn new(their_profile_id: ProfileIdentifier) -> Self {
+        EntitySecureChannelAccessControl { their_profile_id }
+    }
+}
+
+#[async_trait]
+impl AccessControl for EntitySecureChannelAccessControl {
+    async fn msg_is_authorized(&mut self, local_msg: &LocalMessage) -> Result<bool> {
+        if let Ok(msg_profile_id) = EntitySecureChannelLocalInfo::find_info(local_msg) {
+            Ok(msg_profile_id.their_profile_id() == &self.their_profile_id)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::{Entity, Identity};
-    use ockam_core::{route, Result, Route};
+    use core::sync::atomic::{AtomicU8, Ordering};
+    use ockam_core::compat::sync::Arc;
+    use ockam_core::{route, Any, Route, Routed, Worker};
     use ockam_node::Context;
     use ockam_vault_sync_core::Vault;
+    use std::convert::TryInto;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     #[ockam_macros::test]
     async fn test_channel(ctx: &mut Context) -> Result<()> {
@@ -201,6 +230,124 @@ mod test {
             "Hello, Alice!",
             ctx.receive::<String>().await?.take().body()
         );
+
+        ctx.stop().await
+    }
+
+    struct Receiver {
+        received_count: Arc<AtomicU8>,
+    }
+
+    #[ockam_core::async_trait]
+    impl Worker for Receiver {
+        type Message = Any;
+        type Context = Context;
+
+        async fn handle_message(
+            &mut self,
+            _context: &mut Self::Context,
+            _msg: Routed<Self::Message>,
+        ) -> Result<()> {
+            self.received_count.fetch_add(1, Ordering::Relaxed);
+
+            Ok(())
+        }
+    }
+
+    #[allow(non_snake_case)]
+    #[ockam_macros::test]
+    async fn access_control__known_participant__should_pass_messages(
+        ctx: &mut Context,
+    ) -> Result<()> {
+        let received_count = Arc::new(AtomicU8::new(0));
+        let receiver = Receiver {
+            received_count: received_count.clone(),
+        };
+
+        let vault = Vault::create(&ctx).await?;
+
+        let mut alice = Entity::create(&ctx, &vault).await?;
+        let mut bob = Entity::create(&ctx, &vault).await?;
+
+        let access_control = EntitySecureChannelAccessControl::new(alice.identifier().await?);
+        ctx.start_worker_with_access_control("receiver", receiver, access_control)
+            .await?;
+
+        bob.create_secure_channel_listener("listener", TrustEveryonePolicy)
+            .await?;
+
+        let alice_channel = alice
+            .create_secure_channel("listener", TrustEveryonePolicy)
+            .await?;
+
+        ctx.send(route![alice_channel, "receiver"], "Hello, Bob!".to_string())
+            .await?;
+
+        sleep(Duration::from_secs(1)).await;
+
+        assert_eq!(received_count.load(Ordering::Relaxed), 1);
+
+        ctx.stop().await
+    }
+
+    #[allow(non_snake_case)]
+    #[ockam_macros::test]
+    async fn access_control__unknown_participant__should_not_pass_messages(
+        ctx: &mut Context,
+    ) -> Result<()> {
+        let received_count = Arc::new(AtomicU8::new(0));
+        let receiver = Receiver {
+            received_count: received_count.clone(),
+        };
+
+        let vault = Vault::create(&ctx).await?;
+
+        let mut alice = Entity::create(&ctx, &vault).await?;
+        let mut bob = Entity::create(&ctx, &vault).await?;
+
+        let access_control = EntitySecureChannelAccessControl::new(bob.identifier().await?);
+        ctx.start_worker_with_access_control("receiver", receiver, access_control)
+            .await?;
+
+        bob.create_secure_channel_listener("listener", TrustEveryonePolicy)
+            .await?;
+
+        let alice_channel = alice
+            .create_secure_channel("listener", TrustEveryonePolicy)
+            .await?;
+
+        ctx.send(route![alice_channel, "receiver"], "Hello, Bob!".to_string())
+            .await?;
+
+        sleep(Duration::from_secs(1)).await;
+
+        assert_eq!(received_count.load(Ordering::Relaxed), 0);
+
+        ctx.stop().await
+    }
+
+    #[allow(non_snake_case)]
+    #[ockam_macros::test]
+    async fn access_control__no_secure_channel__should_not_pass_messages(
+        ctx: &mut Context,
+    ) -> Result<()> {
+        let received_count = Arc::new(AtomicU8::new(0));
+        let receiver = Receiver {
+            received_count: received_count.clone(),
+        };
+
+        let access_control = EntitySecureChannelAccessControl::new(
+            "P79b26ba2ea5ad9b54abe5bebbcce7c446beda8c948afc0de293250090e5270b6".try_into()?,
+        );
+        ctx.start_worker_with_access_control("receiver", receiver, access_control)
+            .await?;
+
+        ctx.send(route!["receiver"], "Hello, Bob!".to_string())
+            .await?;
+
+        sleep(Duration::from_secs(1)).await;
+
+        assert_eq!(received_count.load(Ordering::Relaxed), 0);
 
         ctx.stop().await
     }
