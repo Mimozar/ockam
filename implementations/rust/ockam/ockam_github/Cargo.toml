@@ -1,0 +1,30 @@
+[package]
+authors = ["Ockam Developers"]
+categories = ["cryptography", "asynchronous", "authentication", "network-programming", "embedded"]
+description = "End-to-end encryption and mutual authentication for distributed applications."
+edition = "2018"
+exclude = [
+    "tests/**"
+]
+homepage = "https://github.com/ockam-network/ockam"
+keywords = ["ockam", "crypto", "cryptography", "network-programming", "encryption"]
+license = "Apache-2.0"
+name = "ockam_github"
+readme = "README.md"
+repository = "https://github.com/ockam-network/ockam/tree/develop/implementations/rust/ockam/ockam_github"
+version = "0.1.0"
+
+[dependencies]
+ockam_core = { path = "../ockam_core", version = "^0.40.0" }
+ockam_entity = { path = "../ockam_entity", version = "^0.30.0" }
+ockam_channel = { path = "../ockam_channel", version = "^0.36.0" }
+ockam_node = {path = "../ockam_node", version = "^0.39.0" }
+ockam_message_derive = { path = "../ockam_message_derive", version = "^0.1.0" }
+ockam_vault = { path = "../ockam_vault", version = "^0.34.0" }
+ockam_vault_core = { path = "../ockam_vault_core", version = "^0.34.0" }
+reqwest = "0.11.6"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+base64 = "0.13.0"
+
+[dev-dependencies]
+tokio = {version = "1.8", features = ["full"]}

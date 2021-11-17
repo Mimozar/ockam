@@ -1431,6 +1431,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ockam_github"
+version = "0.1.0"
+dependencies = [
+ "ockam_channel",
+ "ockam_core",
+ "ockam_entity",
+ "ockam_message_derive",
+ "ockam_node",
+ "ockam_vault",
+ "ockam_vault_core",
+ "reqwest",
+ "serde 1.0.130",
+]
+
+[[package]]
 name = "ockam_kafka"
 version = "0.1.0"
 dependencies = [
