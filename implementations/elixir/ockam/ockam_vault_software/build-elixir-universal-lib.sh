@@ -23,8 +23,6 @@ set -e
 # - no support for "$CARGO_TARGET_DIR"
 # - doesn't detect that the user needs to
 #   `rustup target add x86_64-apple-darwin aarch64-apple-darwin`
-# - assumes that `ockam_vault_software/_build/dev/native/tmp` is
-#   an okay place to build
 # - always builds everything every time...
 
 ERLANG_INCLUDE_DIR=$(erl -eval 'io:format("~s", [lists:concat([code:root_dir(), "/erts-", erlang:system_info(version), "/include"])])' -s init stop -noshell)
@@ -33,13 +31,12 @@ OCKAM_ROOT=$(git rev-parse --show-toplevel)
 
 OCKAM_VAULT_SOFTWARE_DIR="$OCKAM_ROOT/implementations/elixir/ockam/ockam_vault_software"
 # NOT SURE THAT THIS
-BUILD_DIR="$OCKAM_VAULT_SOFTWARE_DIR/_build/dev/native/tmp"
+BUILD_DIR="$OCKAM_VAULT_SOFTWARE_DIR/priv"
 
 OCKAM_FFI_DIR="$OCKAM_ROOT/implementations/rust/ockam/ockam_ffi"
 NIF_SOURCE_DIR="$OCKAM_VAULT_SOFTWARE_DIR/native/vault/software"
 
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/macos-x86_64" "$BUILD_DIR/macos-arm64" "$BUILD_DIR/macos-universal"
+mkdir -p "$BUILD_DIR/darwin_x86_64/native" "$BUILD_DIR/darwin_arm64/native" "$BUILD_DIR/darwin_universal/native"
 
 # cargo build for x86_64
 pushd "$OCKAM_FFI_DIR"
@@ -54,7 +51,7 @@ cc \
     -arch x86_64 -m64 "$OCKAM_ROOT/target/x86_64-apple-darwin/release/libockam_ffi.a" \
     "$NIF_SOURCE_DIR/common.c" "$NIF_SOURCE_DIR/nifs.c" "$NIF_SOURCE_DIR/vault.c" \
     -O3 -fPIC -shared -Wl,-undefined,dynamic_lookup \
-    -o "$BUILD_DIR/macos-x86_64/libockam_elixir_ffi.dylib"
+    -o "$BUILD_DIR/darwin_x86_64/native/libockam_elixir_ffi.dylib"
 
 echo "### Building rust code for for aarch64"
 
@@ -72,14 +69,17 @@ cc \
     -arch arm64 "$OCKAM_ROOT/target/aarch64-apple-darwin/release/libockam_ffi.a" \
     "$NIF_SOURCE_DIR/common.c" "$NIF_SOURCE_DIR/nifs.c" "$NIF_SOURCE_DIR/vault.c" \
     -O3 -fPIC -shared -Wl,-undefined,dynamic_lookup \
-    -o "$BUILD_DIR/macos-arm64/libockam_elixir_ffi.dylib"
+    -o "$BUILD_DIR/darwin_arm64/native/libockam_elixir_ffi.dylib"
 
 echo "### Producing universal binary"
 # Create a universal binary
 lipo -create \
-    -output "$BUILD_DIR/macos-universal/libockam_elixir_ffi.dylib" \
-    "$BUILD_DIR/macos-arm64/libockam_elixir_ffi.dylib" \
-    "$BUILD_DIR/macos-x86_64/libockam_elixir_ffi.dylib"
+    -output "$BUILD_DIR/darwin_universal/native/libockam_elixir_ffi.dylib" \
+    "$BUILD_DIR/darwin_arm64/native/libockam_elixir_ffi.dylib" \
+    "$BUILD_DIR/darwin_x86_64/native/libockam_elixir_ffi.dylib"
 
-cp "$BUILD_DIR/macos-universal/libockam_elixir_ffi.dylib" "$OCKAM_VAULT_SOFTWARE_DIR/priv/darwin_universal/native/libockam_elixir_ffi.so"
+# Rename to .so to make erlang load it properly
+mv "$BUILD_DIR/darwin_arm64/native/libockam_elixir_ffi.dylib" "$BUILD_DIR/darwin_arm64/native/libockam_elixir_ffi.so"
+mv "$BUILD_DIR/darwin_x86_64/native/libockam_elixir_ffi.dylib" "$BUILD_DIR/darwin_x86_64/native/libockam_elixir_ffi.so"
+mv "$BUILD_DIR/darwin_universal/native/libockam_elixir_ffi.dylib" "$BUILD_DIR/darwin_universal/native/libockam_elixir_ffi.so"
 
