@@ -12,6 +12,7 @@ keywords = ["ockam", "crypto", "macro", "proc-macro", "attribute"]
 description = """
 Ockam node attribute proc_macro.
 """
+publish = true
 
 [lib]
 proc-macro = true
